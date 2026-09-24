@@ -32,7 +32,7 @@ final class GameStateStepTests: XCTestCase {
             direction: direction,
             pendingDirection: direction,
             growth: growth,
-            color: .cyan
+            colorId: .cyan
         )
     }
 
@@ -216,5 +216,64 @@ final class GameStateStepTests: XCTestCase {
         ))
         g.requestPlayerDirection(.left)
         XCTAssertEqual(g.snakes[0].pendingDirection, .left)
+    }
+
+    // MARK: - Snapshot round-trip
+
+    func test_snapshotThenApplyRestoresState() {
+        let g = makeEmptyGame()
+        g.tick = 42
+        g.matchSeed = 0xDEADBEEF
+        g.snakes.append(snake(
+            id: 0,
+            body: [GridPoint(x: 5, y: 5), GridPoint(x: 4, y: 5), GridPoint(x: 3, y: 5)],
+            direction: .right,
+            growth: 2
+        ))
+        g.food = [GridPoint(x: 10, y: 10), GridPoint(x: 12, y: 8)]
+
+        let snap = g.snapshot()
+
+        let g2 = makeEmptyGame()
+        g2.apply(snap)
+
+        XCTAssertEqual(g2.tick, 42)
+        XCTAssertEqual(g2.matchSeed, 0xDEADBEEF)
+        XCTAssertEqual(g2.snakes.count, 1)
+        XCTAssertEqual(g2.snakes[0].body, g.snakes[0].body)
+        XCTAssertEqual(g2.snakes[0].growth, 2)
+        XCTAssertEqual(g2.food, g.food)
+    }
+
+    func test_snapshotJSONRoundTrips() {
+        let g = makeEmptyGame()
+        g.tick = 7
+        g.matchSeed = 12345
+        g.snakes.append(snake(
+            id: 0,
+            body: [GridPoint(x: 5, y: 5), GridPoint(x: 4, y: 5), GridPoint(x: 3, y: 5)],
+            direction: .right,
+            controller: .remotePeer(PeerID(value: "peer-abc"))
+        ))
+        g.food = [GridPoint(x: 9, y: 9)]
+
+        let data = try! JSONEncoder().encode(g.snapshot())
+        let decoded = try! JSONDecoder().decode(GameSnapshot.self, from: data)
+
+        XCTAssertEqual(decoded.tick, 7)
+        XCTAssertEqual(decoded.matchSeed, 12345)
+        XCTAssertEqual(decoded.snakes[0].id, 0)
+        XCTAssertEqual(decoded.snakes[0].controller,
+                       .remotePeer(PeerID(value: "peer-abc")))
+        XCTAssertEqual(decoded.food, [GridPoint(x: 9, y: 9)])
+    }
+
+    func test_inputMessageJSONRoundTrips() {
+        let msg = InputMessage(snakeId: 3, direction: .left, tick: 128)
+        let data = try! JSONEncoder().encode(msg)
+        let decoded = try! JSONDecoder().decode(InputMessage.self, from: data)
+        XCTAssertEqual(decoded.snakeId, 3)
+        XCTAssertEqual(decoded.direction, .left)
+        XCTAssertEqual(decoded.tick, 128)
     }
 }

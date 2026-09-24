@@ -19,7 +19,7 @@ enum Controller: Hashable {
     case bot
 }
 
-struct GridPoint: Hashable {
+struct GridPoint: Hashable, Codable {
     var x: Int
     var y: Int
 
@@ -28,7 +28,7 @@ struct GridPoint: Hashable {
     }
 }
 
-enum Direction: CaseIterable {
+enum Direction: String, CaseIterable, Codable {
     case up, down, left, right
 
     var delta: GridPoint {
@@ -50,7 +50,23 @@ enum Direction: CaseIterable {
     }
 }
 
-struct Snake: Identifiable {
+/// Wire-safe color id. Snake carries the id; view code maps to `Color`.
+/// Keeps snapshots trivially Codable and independent of SwiftUI on the wire.
+enum SnakeColor: String, Codable, CaseIterable {
+    case cyan, magenta, amber, acidGreen, orange
+
+    var color: Color {
+        switch self {
+        case .cyan:      return .cyan
+        case .magenta:   return Color(red: 1.0, green: 0.25, blue: 0.75)
+        case .amber:     return Color(red: 1.0, green: 0.85, blue: 0.15)
+        case .acidGreen: return Color(red: 0.35, green: 1.0, blue: 0.5)
+        case .orange:    return Color(red: 1.0, green: 0.45, blue: 0.15)
+        }
+    }
+}
+
+struct Snake: Identifiable, Codable {
     let id: Int
     var controller: Controller
     var body: [GridPoint]        // head is body[0]
@@ -58,12 +74,32 @@ struct Snake: Identifiable {
     var pendingDirection: Direction
     var alive: Bool = true
     var growth: Int = 0          // segments still to grow
-    var color: Color
+    var colorId: SnakeColor
     var score: Int = 0
 
     var head: GridPoint { body[0] }
     var isPlayer: Bool { controller == .localPlayer }
     var isBot: Bool { controller == .bot }
+    var color: Color { colorId.color }
+}
+
+extension Controller: Codable {}
+
+/// Full game state at one tick — what an authoritative host broadcasts,
+/// and what a replay harness recomputes from `(seed, inputs)`.
+struct GameSnapshot: Codable {
+    let tick: Int
+    let matchSeed: UInt64
+    let snakes: [Snake]
+    let food: Set<GridPoint>
+}
+
+/// A single direction change from any input source, tagged with the tick
+/// the sender observed. Host uses `tick` for late-input reconciliation.
+struct InputMessage: Codable {
+    let snakeId: Int
+    let direction: Direction
+    let tick: Int
 }
 
 /// Seedable PRNG (SplitMix64) so a match can be replayed from `(seed, inputs)`

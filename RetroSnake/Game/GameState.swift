@@ -50,16 +50,11 @@ final class GameState {
             body: initialBody(at: playerStart, direction: .up),
             direction: .up,
             pendingDirection: .up,
-            color: .cyan
+            colorId: .cyan
         ))
 
         // Bots evenly distributed
-        let botColors: [Color] = [
-            Color(red: 1.0, green: 0.25, blue: 0.75),  // magenta/pink
-            Color(red: 1.0, green: 0.85, blue: 0.15),  // amber
-            Color(red: 0.35, green: 1.0, blue: 0.5),   // acid green
-            Color(red: 1.0, green: 0.45, blue: 0.15),  // orange
-        ]
+        let botColorIds: [SnakeColor] = [.magenta, .amber, .acidGreen, .orange]
         for i in 0..<botCount {
             let col = 2 + (i * (width - 4)) / max(1, botCount - 1)
             let row = height / 4
@@ -70,11 +65,29 @@ final class GameState {
                 body: initialBody(at: GridPoint(x: col, y: row), direction: dir),
                 direction: dir,
                 pendingDirection: dir,
-                color: botColors[i % botColors.count]
+                colorId: botColorIds[i % botColorIds.count]
             ))
         }
 
         while food.count < targetFoodCount { spawnFood() }
+    }
+
+    // MARK: - Snapshot / apply
+
+    /// Produce a wire-friendly snapshot of the current tick. Called by the
+    /// authoritative host after each `step()` and broadcast to clients.
+    func snapshot() -> GameSnapshot {
+        GameSnapshot(tick: tick, matchSeed: matchSeed, snakes: snakes, food: food)
+    }
+
+    /// Overwrite live state with a snapshot from the host. Doesn't touch
+    /// `mode` (match-level, not per-tick) or the timer — clients don't tick
+    /// their own sim in host-authoritative mode.
+    func apply(_ snapshot: GameSnapshot) {
+        tick = snapshot.tick
+        matchSeed = snapshot.matchSeed
+        snakes = snapshot.snakes
+        food = snapshot.food
     }
 
     private func initialBody(at head: GridPoint, direction: Direction) -> [GridPoint] {
