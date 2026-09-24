@@ -27,3 +27,34 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         SWIFT_VERSION: "5.0"
         ENABLE_PREVIEWS: YES
+
+  RetroSnakeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: RetroSnakeTests
+    dependencies:
+      - target: RetroSnake
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.brycesharrits.RetroSnakeTests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+
+schemes:
+  RetroSnake:
+    build:
+      targets:
+        RetroSnake: all
+        RetroSnakeTests: [test]
+    test:
+      targets:
+        - RetroSnakeTests
+    run:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
