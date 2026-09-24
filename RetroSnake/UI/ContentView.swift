@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var showGame = false
+    @State private var showSinglePlayer = false
+    @State private var showLobby = false
     @State private var titlePulse = false
 
     var body: some View {
@@ -35,14 +36,17 @@ struct ContentView: View {
                 .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true),
                            value: titlePulse)
 
-                Text("v s. 3 bots")
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.55))
-
                 Spacer()
 
-                NeonButton(title: "PLAY", color: .cyan) {
-                    showGame = true
+                VStack(spacing: 16) {
+                    NeonButton(title: "SINGLE PLAYER", color: .cyan) {
+                        showSinglePlayer = true
+                    }
+
+                    NeonButton(title: "BATTLE ROYALE",
+                               color: Color(red: 1.0, green: 0.35, blue: 0.75)) {
+                        showLobby = true
+                    }
                 }
 
                 Text("swipe to steer")
@@ -55,8 +59,11 @@ struct ContentView: View {
             CRTOverlay()
         }
         .onAppear { titlePulse = true }
-        .fullScreenCover(isPresented: $showGame) {
-            GameView()
+        .fullScreenCover(isPresented: $showSinglePlayer) {
+            GameView(mode: .singlePlayer)
+        }
+        .fullScreenCover(isPresented: $showLobby) {
+            LobbyView()
         }
     }
 }

@@ -1,6 +1,11 @@
 import Foundation
 import SwiftUI
 
+enum MatchMode {
+    case singlePlayer
+    case battleRoyale
+}
+
 struct GridPoint: Hashable {
     var x: Int
     var y: Int

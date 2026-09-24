@@ -16,6 +16,7 @@ final class GameState {
     var tick: Int = 0
     var isRunning: Bool = false
     var isGameOver: Bool = false
+    var mode: MatchMode = .singlePlayer
 
     // Config
     let botCount: Int = 3
@@ -31,7 +32,8 @@ final class GameState {
 
     // MARK: - Lifecycle
 
-    func newGame() {
+    func newGame(mode: MatchMode = .singlePlayer) {
+        self.mode = mode
         snakes.removeAll()
         food.removeAll()
         tick = 0

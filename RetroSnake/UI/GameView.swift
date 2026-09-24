@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct GameView: View {
+    let mode: MatchMode
     @Environment(\.dismiss) private var dismiss
     @State private var game = GameState()
     @State private var dragStart: CGPoint?
@@ -26,7 +27,7 @@ struct GameView: View {
                             score: game.snakes.first(where: { $0.isPlayer })?.score ?? 0,
                             botsAlive: game.aliveBotCount,
                             onRestart: {
-                                game.newGame()
+                                game.newGame(mode: mode)
                                 game.start()
                             },
                             onQuit: {
@@ -41,7 +42,7 @@ struct GameView: View {
             }
         }
         .onAppear {
-            game.newGame()
+            game.newGame(mode: mode)
             game.start()
         }
         .onDisappear { game.stop() }
