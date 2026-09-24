@@ -6,6 +6,19 @@ enum MatchMode {
     case battleRoyale
 }
 
+/// Transport-agnostic peer identifier. Wrapping a plain string keeps
+/// `Controller` and message types free of any framework-specific ID
+/// (MCPeerID today, potentially a server-issued id later).
+struct PeerID: Hashable, Codable {
+    let value: String
+}
+
+enum Controller: Hashable {
+    case localPlayer
+    case remotePeer(PeerID)
+    case bot
+}
+
 struct GridPoint: Hashable {
     var x: Int
     var y: Int
@@ -39,7 +52,7 @@ enum Direction: CaseIterable {
 
 struct Snake: Identifiable {
     let id: Int
-    let isPlayer: Bool
+    var controller: Controller
     var body: [GridPoint]        // head is body[0]
     var direction: Direction
     var pendingDirection: Direction
@@ -49,4 +62,20 @@ struct Snake: Identifiable {
     var score: Int = 0
 
     var head: GridPoint { body[0] }
+    var isPlayer: Bool { controller == .localPlayer }
+    var isBot: Bool { controller == .bot }
+}
+
+/// Seedable PRNG (SplitMix64) so a match can be replayed from `(seed, inputs)`
+/// — the foundation for host→client snapshot verification and future lockstep.
+struct SplitMix64: RandomNumberGenerator {
+    private var state: UInt64
+    init(seed: UInt64) { self.state = seed }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E3779B97F4A7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+        return z ^ (z >> 31)
+    }
 }

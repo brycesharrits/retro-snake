@@ -22,11 +22,12 @@ final class GameStateStepTests: XCTestCase {
         id: Int,
         body: [GridPoint],
         direction: Direction,
-        growth: Int = 0
+        growth: Int = 0,
+        controller: Controller = .localPlayer
     ) -> Snake {
         Snake(
             id: id,
-            isPlayer: true,
+            controller: controller,
             body: body,
             direction: direction,
             pendingDirection: direction,

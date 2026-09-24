@@ -17,6 +17,7 @@ final class GameState {
     var isRunning: Bool = false
     var isGameOver: Bool = false
     var mode: MatchMode = .singlePlayer
+    var matchSeed: UInt64 = 0
 
     // Config
     let botCount: Int = 3
@@ -24,7 +25,7 @@ final class GameState {
     var tickInterval: TimeInterval { max(0.06, 0.14 - Double(playerLength) * 0.002) }
 
     private var timer: Timer?
-    private var rng = SystemRandomNumberGenerator()
+    private var rng = SplitMix64(seed: UInt64.random(in: .min ... .max))
 
     var playerLength: Int { snakes.first(where: { $0.isPlayer })?.body.count ?? 0 }
     var playerAlive: Bool { snakes.first(where: { $0.isPlayer })?.alive ?? false }
@@ -32,8 +33,10 @@ final class GameState {
 
     // MARK: - Lifecycle
 
-    func newGame(mode: MatchMode = .singlePlayer) {
+    func newGame(mode: MatchMode = .singlePlayer, seed: UInt64? = nil) {
         self.mode = mode
+        self.matchSeed = seed ?? UInt64.random(in: .min ... .max)
+        self.rng = SplitMix64(seed: matchSeed)
         snakes.removeAll()
         food.removeAll()
         tick = 0
@@ -43,7 +46,7 @@ final class GameState {
         let playerStart = GridPoint(x: width / 2, y: height * 2 / 3)
         snakes.append(Snake(
             id: 0,
-            isPlayer: true,
+            controller: .localPlayer,
             body: initialBody(at: playerStart, direction: .up),
             direction: .up,
             pendingDirection: .up,
@@ -63,7 +66,7 @@ final class GameState {
             let dir: Direction = (i % 2 == 0) ? .down : .up
             snakes.append(Snake(
                 id: i + 1,
-                isPlayer: false,
+                controller: .bot,
                 body: initialBody(at: GridPoint(x: col, y: row), direction: dir),
                 direction: dir,
                 pendingDirection: dir,
@@ -102,11 +105,19 @@ final class GameState {
 
     // MARK: - Input
 
-    func requestPlayerDirection(_ dir: Direction) {
-        guard let idx = snakes.firstIndex(where: { $0.isPlayer }), snakes[idx].alive else { return }
-        // Can't reverse into your own neck
+    /// General input entry point. Route ALL direction inputs through this —
+    /// local swipe, remote-peer messages, and (via `BotAI`) bot decisions —
+    /// so a single seam holds the reverse-onto-neck rule.
+    func requestDirection(snakeId: Int, dir: Direction) {
+        guard let idx = snakes.firstIndex(where: { $0.id == snakeId }),
+              snakes[idx].alive else { return }
         if dir == snakes[idx].direction.opposite { return }
         snakes[idx].pendingDirection = dir
+    }
+
+    func requestPlayerDirection(_ dir: Direction) {
+        guard let player = snakes.first(where: { $0.isPlayer }) else { return }
+        requestDirection(snakeId: player.id, dir: dir)
     }
 
     // MARK: - Tick
@@ -115,7 +126,7 @@ final class GameState {
         tick += 1
 
         // Bot decisions first
-        for i in snakes.indices where !snakes[i].isPlayer && snakes[i].alive {
+        for i in snakes.indices where snakes[i].isBot && snakes[i].alive {
             let dir = BotAI.decide(for: snakes[i], in: self)
             if dir != snakes[i].direction.opposite {
                 snakes[i].pendingDirection = dir
