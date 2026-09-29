@@ -53,7 +53,7 @@ enum Direction: String, CaseIterable, Codable {
 /// Wire-safe color id. Snake carries the id; view code maps to `Color`.
 /// Keeps snapshots trivially Codable and independent of SwiftUI on the wire.
 enum SnakeColor: String, Codable, CaseIterable {
-    case cyan, magenta, amber, acidGreen, orange
+    case cyan, magenta, amber, acidGreen, orange, violet
 
     var color: Color {
         switch self {
@@ -62,6 +62,7 @@ enum SnakeColor: String, Codable, CaseIterable {
         case .amber:     return Color(red: 1.0, green: 0.85, blue: 0.15)
         case .acidGreen: return Color(red: 0.35, green: 1.0, blue: 0.5)
         case .orange:    return Color(red: 1.0, green: 0.45, blue: 0.15)
+        case .violet:    return Color(red: 0.6, green: 0.4, blue: 1.0)
         }
     }
 }

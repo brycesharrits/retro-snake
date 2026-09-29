@@ -276,4 +276,124 @@ final class GameStateStepTests: XCTestCase {
         XCTAssertEqual(decoded.direction, .left)
         XCTAssertEqual(decoded.tick, 128)
     }
+
+    // MARK: - Battle Royale spawn
+
+    func test_battleRoyaleSpawnsSixSnakesWithNoRemotePeers() {
+        let g = GameState()
+        g.newGame(mode: .battleRoyale)
+        XCTAssertEqual(g.snakes.count, 6)
+        XCTAssertEqual(g.snakes[0].controller, .localPlayer)
+        // With no remote peers, seats 1..5 are all bots.
+        for seat in 1...5 {
+            XCTAssertEqual(g.snakes[seat].controller, .bot, "seat \(seat)")
+        }
+    }
+
+    func test_battleRoyaleAssignsRemotePeersToMiddleSeats() {
+        let g = GameState()
+        let peers = [PeerID(value: "alice"), PeerID(value: "bob")]
+        g.newGame(mode: .battleRoyale, remotePeers: peers)
+        XCTAssertEqual(g.snakes.count, 6)
+        XCTAssertEqual(g.snakes[0].controller, .localPlayer)
+        XCTAssertEqual(g.snakes[1].controller, .remotePeer(PeerID(value: "alice")))
+        XCTAssertEqual(g.snakes[2].controller, .remotePeer(PeerID(value: "bob")))
+        XCTAssertEqual(g.snakes[3].controller, .bot)
+        XCTAssertEqual(g.snakes[4].controller, .bot)
+        XCTAssertEqual(g.snakes[5].controller, .bot)
+    }
+
+    func test_battleRoyaleSpawnsAreDistinct() {
+        let g = GameState()
+        g.newGame(mode: .battleRoyale)
+        let heads = g.snakes.map(\.head)
+        XCTAssertEqual(Set(heads).count, heads.count, "each seat must spawn at a unique cell")
+    }
+
+    // MARK: - Snapshot peer-identity round trip
+
+    func test_snapshotExternalizesLocalPlayerToRemotePeer() {
+        // A host's `.localPlayer` becomes `.remotePeer(myId)` on the wire so
+        // recipients can identify which seat is which.
+        let g = GameState()
+        g.newGame(mode: .battleRoyale)  // default LocalTransport, peer id "local"
+        let snap = g.snapshot()
+        XCTAssertEqual(snap.snakes[0].controller,
+                       .remotePeer(PeerID(value: "local")))
+    }
+
+    func test_applyInternalizesMatchingPeerBackToLocalPlayer() {
+        // A snapshot from a "host" with our own PeerID stamped on seat 0
+        // should turn back into `.localPlayer` when we apply it.
+        let g = GameState()
+        g.newGame(mode: .battleRoyale)
+        let hostSnap = GameSnapshot(
+            tick: 5, matchSeed: 0,
+            snakes: [
+                Snake(id: 0,
+                      controller: .remotePeer(PeerID(value: "local")),
+                      body: [GridPoint(x: 1, y: 1), GridPoint(x: 1, y: 2), GridPoint(x: 1, y: 3)],
+                      direction: .up, pendingDirection: .up,
+                      colorId: .cyan),
+                Snake(id: 1,
+                      controller: .remotePeer(PeerID(value: "other")),
+                      body: [GridPoint(x: 5, y: 5), GridPoint(x: 5, y: 6), GridPoint(x: 5, y: 7)],
+                      direction: .up, pendingDirection: .up,
+                      colorId: .magenta),
+            ],
+            food: []
+        )
+        g.apply(hostSnap)
+        XCTAssertEqual(g.snakes[0].controller, .localPlayer,
+                       "our seat should become local")
+        XCTAssertEqual(g.snakes[1].controller,
+                       .remotePeer(PeerID(value: "other")),
+                       "other peer's seat is left as remote")
+    }
+
+    // MARK: - Host authoritative loop
+
+    func test_battleRoyaleClientDoesNotStartTicker() {
+        let g = GameState()
+        let joinerTransport = MultipeerTransport(displayName: "J", role: .joiner)
+        // Skip newGame's spawn — use client session setup so we're client-shaped.
+        let seed = GameSnapshot(tick: 0, matchSeed: 42, snakes: [], food: [])
+        g.setupClientSession(mode: .battleRoyale, transport: joinerTransport, snapshot: seed)
+        g.start()
+        XCTAssertFalse(g.isRunning, "clients must not run their own tick loop")
+    }
+
+    func test_battleRoyaleHostStartsTicker() {
+        let g = GameState()
+        let hostTransport = MultipeerTransport(displayName: "H", role: .host)
+        g.newGame(mode: .battleRoyale, transport: hostTransport)
+        g.start()
+        XCTAssertTrue(g.isRunning, "host drives the sim")
+        g.stop()
+    }
+
+    func test_battleRoyaleStepBroadcastsSnapshotViaSpyTransport() {
+        // Use a spy transport that reports itself as host so step() takes
+        // the broadcast branch. Verifying a snapshot was sent (count > 0).
+        let g = GameState()
+        let spy = SpyHostTransport()
+        g.newGame(mode: .battleRoyale, transport: spy)
+        g.step()
+        XCTAssertGreaterThan(spy.snapshotsSent, 0)
+    }
+}
+
+/// Minimal spy for tests that only care about counting broadcasts.
+private final class SpyHostTransport: MatchTransport {
+    let localPeerId = PeerID(value: "spy-host")
+    let isHost = true
+    var onPeerJoin:  ((PeerID) -> Void)?
+    var onPeerLeave: ((PeerID) -> Void)?
+    var onInput:     ((InputMessage) -> Void)?
+    var onSnapshot:  ((GameSnapshot) -> Void)?
+
+    private(set) var snapshotsSent = 0
+
+    func send(input: InputMessage) { onInput?(input) }
+    func send(snapshot: GameSnapshot) { snapshotsSent += 1 }
 }

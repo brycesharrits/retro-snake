@@ -40,7 +40,8 @@ final class GameState {
 
     func newGame(mode: MatchMode = .singlePlayer,
                  seed: UInt64? = nil,
-                 transport: MatchTransport? = nil) {
+                 transport: MatchTransport? = nil,
+                 remotePeers: [PeerID] = []) {
         self.mode = mode
         self.matchSeed = seed ?? UInt64.random(in: .min ... .max)
         self.rng = SplitMix64(seed: matchSeed)
@@ -51,7 +52,27 @@ final class GameState {
         tick = 0
         isGameOver = false
 
-        // Player spawns in the middle heading up
+        switch mode {
+        case .singlePlayer: spawnSinglePlayerSnakes()
+        case .battleRoyale: spawnBattleRoyaleSnakes(remotePeers: remotePeers)
+        }
+
+        while food.count < targetFoodCount { spawnFood() }
+    }
+
+    /// Client-side setup for a match already in progress on the host.
+    /// Skips spawning; the snapshot is the source of truth for state.
+    func setupClientSession(mode: MatchMode,
+                            transport: MatchTransport,
+                            snapshot: GameSnapshot) {
+        self.mode = mode
+        self.transport = transport
+        wireTransport()
+        isGameOver = false
+        apply(snapshot)
+    }
+
+    private func spawnSinglePlayerSnakes() {
         let playerStart = GridPoint(x: width / 2, y: height * 2 / 3)
         snakes.append(Snake(
             id: 0,
@@ -62,7 +83,6 @@ final class GameState {
             colorId: .cyan
         ))
 
-        // Bots evenly distributed
         let botColorIds: [SnakeColor] = [.magenta, .amber, .acidGreen, .orange]
         for i in 0..<botCount {
             let col = 2 + (i * (width - 4)) / max(1, botCount - 1)
@@ -77,26 +97,77 @@ final class GameState {
                 colorId: botColorIds[i % botColorIds.count]
             ))
         }
+    }
 
-        while food.count < targetFoodCount { spawnFood() }
+    /// Six-seat BR spawn: seat 0 = local player, seats 1..N = remote humans,
+    /// remaining seats bot-filled. Spawn positions are fixed and distributed
+    /// so nobody starts on a collision course.
+    private func spawnBattleRoyaleSnakes(remotePeers: [PeerID]) {
+        let spawns: [(GridPoint, Direction)] = [
+            (GridPoint(x: width / 2, y: height - 4), .up),
+            (GridPoint(x: width / 2, y: 3), .down),
+            (GridPoint(x: 3, y: height / 2), .right),
+            (GridPoint(x: width - 4, y: height / 2), .left),
+            (GridPoint(x: 3, y: 3), .down),
+            (GridPoint(x: width - 4, y: height - 4), .up),
+        ]
+        let colors: [SnakeColor] = [.cyan, .magenta, .amber, .acidGreen, .orange, .violet]
+
+        for seat in 0..<spawns.count {
+            let (spawn, dir) = spawns[seat]
+            let controller: Controller
+            if seat == 0 {
+                controller = .localPlayer
+            } else if seat - 1 < remotePeers.count {
+                controller = .remotePeer(remotePeers[seat - 1])
+            } else {
+                controller = .bot
+            }
+            snakes.append(Snake(
+                id: seat,
+                controller: controller,
+                body: initialBody(at: spawn, direction: dir),
+                direction: dir,
+                pendingDirection: dir,
+                colorId: colors[seat]
+            ))
+        }
     }
 
     // MARK: - Snapshot / apply
 
-    /// Produce a wire-friendly snapshot of the current tick. Called by the
-    /// authoritative host after each `step()` and broadcast to clients.
+    /// Produce a wire-friendly snapshot. The local player's controller is
+    /// externalized to `.remotePeer(myPeerId)` so every seat is identified
+    /// by a PeerID on the wire — the receiver decides which one is theirs.
     func snapshot() -> GameSnapshot {
-        GameSnapshot(tick: tick, matchSeed: matchSeed, snakes: snakes, food: food)
+        let myId = transport.localPeerId
+        let externalized: [Snake] = snakes.map { s in
+            var copy = s
+            if copy.controller == .localPlayer {
+                copy.controller = .remotePeer(myId)
+            }
+            return copy
+        }
+        return GameSnapshot(tick: tick, matchSeed: matchSeed,
+                            snakes: externalized, food: food)
     }
 
-    /// Overwrite live state with a snapshot from the host. Doesn't touch
-    /// `mode` (match-level, not per-tick) or the timer — clients don't tick
-    /// their own sim in host-authoritative mode.
+    /// Overwrite live state with a snapshot from the host. Any `.remotePeer`
+    /// whose PeerID matches this device is internalized to `.localPlayer`
+    /// so all local logic (input routing, HUD, "isPlayer" checks) works.
+    /// Doesn't touch `mode` (match-level, not per-tick).
     func apply(_ snapshot: GameSnapshot) {
-        tick = snapshot.tick
-        matchSeed = snapshot.matchSeed
-        snakes = snapshot.snakes
-        food = snapshot.food
+        let myId = transport.localPeerId
+        self.snakes = snapshot.snakes.map { s in
+            var copy = s
+            if case .remotePeer(let pid) = copy.controller, pid == myId {
+                copy.controller = .localPlayer
+            }
+            return copy
+        }
+        self.tick = snapshot.tick
+        self.matchSeed = snapshot.matchSeed
+        self.food = snapshot.food
     }
 
     private func initialBody(at head: GridPoint, direction: Direction) -> [GridPoint] {
@@ -106,6 +177,8 @@ final class GameState {
 
     func start() {
         guard !isRunning else { return }
+        // In BR, only the host runs the sim. Clients render snapshots.
+        if mode == .battleRoyale && !transport.isHost { return }
         isRunning = true
         scheduleTick()
     }
@@ -236,6 +309,12 @@ final class GameState {
         if !playerAlive {
             isGameOver = true
             stop()
+        }
+
+        // Host broadcasts state each tick in BR mode. Clients render the
+        // resulting snapshot via transport.onSnapshot → apply(_:).
+        if mode == .battleRoyale && transport.isHost {
+            transport.send(snapshot: snapshot())
         }
     }
 

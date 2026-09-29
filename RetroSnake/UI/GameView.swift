@@ -2,6 +2,10 @@ import SwiftUI
 
 struct GameView: View {
     let mode: MatchMode
+    var transport: MatchTransport? = nil
+    var initialSnapshot: GameSnapshot? = nil
+    var remotePeers: [PeerID] = []
+
     @Environment(\.dismiss) private var dismiss
     @State private var game = GameState()
     @State private var dragStart: CGPoint?
@@ -27,7 +31,7 @@ struct GameView: View {
                             score: game.snakes.first(where: { $0.isPlayer })?.score ?? 0,
                             botsAlive: game.aliveBotCount,
                             onRestart: {
-                                game.newGame(mode: mode)
+                                game.newGame(mode: mode, transport: transport, remotePeers: remotePeers)
                                 game.start()
                             },
                             onQuit: {
@@ -42,7 +46,12 @@ struct GameView: View {
             }
         }
         .onAppear {
-            game.newGame(mode: mode)
+            if let snap = initialSnapshot, let t = transport {
+                // Joiner: match already running on host; adopt its state.
+                game.setupClientSession(mode: mode, transport: t, snapshot: snap)
+            } else {
+                game.newGame(mode: mode, transport: transport, remotePeers: remotePeers)
+            }
             game.start()
         }
         .onDisappear { game.stop() }
