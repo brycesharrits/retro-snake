@@ -25,6 +25,8 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UIStatusBarHidden: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_NSBonjourServices: "_retrosnake-br._tcp _retrosnake-br._udp"
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Find other players nearby to play Battle Royale."
         SWIFT_VERSION: "5.0"
         ENABLE_PREVIEWS: YES
 

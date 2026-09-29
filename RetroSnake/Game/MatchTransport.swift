@@ -51,3 +51,23 @@ final class LocalTransport: MatchTransport {
         // No peers — nothing to send.
     }
 }
+
+/// On-wire envelope. A single tagged enum so both sides only encode/decode
+/// one type; the auto-synthesized Codable handles the discriminator.
+enum WireMessage: Codable {
+    case input(InputMessage)
+    case snapshot(GameSnapshot)
+}
+
+enum WireCodec {
+    static let encoder = JSONEncoder()
+    static let decoder = JSONDecoder()
+
+    static func encode(_ message: WireMessage) throws -> Data {
+        try encoder.encode(message)
+    }
+
+    static func decode(_ data: Data) throws -> WireMessage {
+        try decoder.decode(WireMessage.self, from: data)
+    }
+}
