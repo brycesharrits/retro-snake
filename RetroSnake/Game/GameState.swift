@@ -27,16 +27,25 @@ final class GameState {
     private var timer: Timer?
     private var rng = SplitMix64(seed: UInt64.random(in: .min ... .max))
 
+    /// Message pipe to peers. Defaults to a single-device loopback so the
+    /// input path is uniform in SP and MP — `sendPlayerDirection` always
+    /// goes through the transport. Reassigned in `newGame(transport:)`.
+    @ObservationIgnored var transport: MatchTransport = LocalTransport()
+
     var playerLength: Int { snakes.first(where: { $0.isPlayer })?.body.count ?? 0 }
     var playerAlive: Bool { snakes.first(where: { $0.isPlayer })?.alive ?? false }
     var aliveBotCount: Int { snakes.filter { !$0.isPlayer && $0.alive }.count }
 
     // MARK: - Lifecycle
 
-    func newGame(mode: MatchMode = .singlePlayer, seed: UInt64? = nil) {
+    func newGame(mode: MatchMode = .singlePlayer,
+                 seed: UInt64? = nil,
+                 transport: MatchTransport? = nil) {
         self.mode = mode
         self.matchSeed = seed ?? UInt64.random(in: .min ... .max)
         self.rng = SplitMix64(seed: matchSeed)
+        if let transport { self.transport = transport }
+        wireTransport()
         snakes.removeAll()
         food.removeAll()
         tick = 0
@@ -131,6 +140,25 @@ final class GameState {
     func requestPlayerDirection(_ dir: Direction) {
         guard let player = snakes.first(where: { $0.isPlayer }) else { return }
         requestDirection(snakeId: player.id, dir: dir)
+    }
+
+    /// The path UI swipes should take. Wraps the input in an `InputMessage`
+    /// tagged with the current tick and hands it to the transport — which
+    /// loops it back in SP or ships it to the host in MP.
+    func sendPlayerDirection(_ dir: Direction) {
+        guard let player = snakes.first(where: { $0.isPlayer }) else { return }
+        transport.send(input: InputMessage(
+            snakeId: player.id, direction: dir, tick: tick
+        ))
+    }
+
+    private func wireTransport() {
+        transport.onInput = { [weak self] msg in
+            self?.requestDirection(snakeId: msg.snakeId, dir: msg.direction)
+        }
+        transport.onSnapshot = { [weak self] snap in
+            self?.apply(snap)
+        }
     }
 
     // MARK: - Tick

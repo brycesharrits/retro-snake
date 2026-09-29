@@ -61,7 +61,7 @@ struct GameView: View {
                 let dir: Direction = abs(dx) > abs(dy)
                     ? (dx > 0 ? .right : .left)
                     : (dy > 0 ? .down : .up)
-                game.requestPlayerDirection(dir)
+                game.sendPlayerDirection(dir)
             }
     }
 }
