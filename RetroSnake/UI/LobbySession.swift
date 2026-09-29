@@ -28,10 +28,12 @@ final class LobbySession {
     var connectedPeers: [PeerID] = []
     var role: MultipeerTransport.Role?
     var matchStart: MatchStartInfo?
+    var isConnected: Bool = false
 
+    /// Not observed — SwiftUI doesn't need to react to the reference itself
+    /// changing, only to the `isConnected` bool and the peer list. Kept
+    /// accessible so the transport can be handed off to `GameView`.
     @ObservationIgnored private(set) var transport: MultipeerTransport?
-
-    var isConnected: Bool { transport != nil }
 
     init() {
         self.displayName = UserDefaults.standard.string(forKey: Self.displayNameKey)
@@ -44,6 +46,7 @@ final class LobbySession {
         t.start()
         self.transport = t
         self.role = .host
+        self.isConnected = true
     }
 
     func join() {
@@ -52,6 +55,7 @@ final class LobbySession {
         t.start()
         self.transport = t
         self.role = .joiner
+        self.isConnected = true
     }
 
     /// Host taps START. Hands GameView the peer roster; GameView builds
@@ -72,6 +76,7 @@ final class LobbySession {
         role = nil
         connectedPeers.removeAll()
         matchStart = nil
+        isConnected = false
     }
 
     private func wire(_ t: MultipeerTransport) {
